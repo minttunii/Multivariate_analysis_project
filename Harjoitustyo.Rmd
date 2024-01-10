@@ -1,0 +1,202 @@
+---
+title: 'Datan ryhmittely '
+author: "Minttu Niiranen"
+date: "02.03.2023"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+subtitle: Harjoitustyö opintojaksolle DATA.STAT.450 Monimuuttujamenetelmät
+lang: fi
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Sisällysluettelo
+
+1.  [Johdanto](#johdanto)
+2.  [Datan esittely](#data)
+3.  [Käytetyt menetelmät](#menetelmat)
+    1.  [K-means ryhmittely](#kmeans)
+    2.  [Pääkomponenttianalyysi](#pca)
+4.  [Tulokset ja niiden tulkinta](#tulokset)
+    1.  [K-means ryhmittely](#kmeans2)
+    2.  [Pääkomponenttianalyysi](#pca2)
+5.  [Yhteenveto](#yhteenveto)
+
+## Johdanto {#johdanto}
+
+Tämä on Monimuuttujamenetelmät kurssin harjoitustyö. Harjoitustyössä tutkitaan valittua aineistoa graafisesti ja kahdella eri analyysin menetelmällä.
+
+Harjoitustyön aineisto on datajoukko, jossa on mitattu kemiallisia ominaisuuksia useammasta eri viinistä. Datan on peräisin UCI arkistosta, joka löytyy lähdeluettelosta. Data on vuodelta 1991 ja se on luotu tarkoitukseen tunnistaa viinien alkuperä. Lähteestä löytyy myös datan tarkempia tietoja, kuten aineiston tekijä.
+
+Dataa käsitellään harjoitustyössä kokonaisuudessaan, ja tarkoituksena on löytää datasta klustereita k-means menetelmällä eli tunnistaa datasta erilaisia ryhmiä niiden kemiallisten ominaisuuksien perusteella. Lisäksi tutkitaan aineistoa pääkomponenttianalyysillä.
+
+## Datan esittely
+
+Data sisältää 178 havaintoa ja 14 muuttujaa, joista 13 viimeisintä kertoo viinien kemiallisista mitatuista ominaisuuksista. Tutkitaan aineistoa numeerisesti ja graafisesti.
+
+```{r}
+# Luetaan data tiedostosta
+setwd("C:/Users/mintt/OneDrive/Tiedostot/Monimuuttujamenetelmät")
+wine <- read.table("wine.data", header = TRUE, sep=",")
+
+```
+
+```{r}
+# Tarkistetaan aineiston koko
+head(wine)
+dim(wine)
+
+# Tutkitaan aineiston yhteenvetoa
+summary(wine)
+
+# Plotataan data
+winetypes = wine[,1]
+pairs(wine[,2:14], col=winetypes, lower.panel = NULL, cex.labels = 0.55)
+
+# Plotataan histogrammit
+layout(matrix(1:8, nc=4))
+for(i in 1:8){hist(wine[,i], main=colnames(wine)[i])}
+layout(matrix(1:6, nc=3))
+for(i in 9:14){hist(wine[,i], main=colnames(wine)[i])}
+```
+
+Viinejä on tiivistelmän perusteella kolmea erilaista. Aineisto ei sisällä puuttuvia arvoja, joita pitäisi huomioida analyysivaiheessa. Histogrammeista näkee muuttujien esiintymismäärät datassa.
+
+Plotatussa kuvassa on jokainen viini omalla värillään. Tarkastelemalla kuvia viinit menevät paikoitellen päällekkäin, joten klusterointi menetelmillä saadut klusterit voivat olla jaoteltu jollain muullakin tavalla ja niitä voi olla eri määrä. Tähän palataan myöhemmin Tulokset ja niiden tulkinta -kappaleessa.
+
+## Käytetyt menetelmät
+
+Datan käsittely muuttuu haastavammaksi, kun havaintojen ja muuttujien määrä kasvaa suuremmaksi. Vastaavaan dataan ollaan kehitetty useita erilaisia menetelmiä, joilla datasta saadaan selville oleellisia tuloksia ja datan graafinen esittäminen helpottuu. Osa menetelmistä perustuu muun muassa datan dimensioiden vähentämiseen, jolloin sen käsitteleminen on yksinkertaisempaa.
+
+Tässä harjoitustyössä tarkastellaan klusterointia k-means menetelmällä sekä pääkomponenttianalyysia, jossa pyritään edellä mainittuun dimensioiden vähentämiseen. Molemmista menetelmistä kerrotaan tarkemmin seuraavissa kappaleissa, mutta esitetään ensin yleinen teoria menetelmien taustalle.
+
+Klusteroinnissa yleisesti pyritään jakamaan data ryhmiin eli klustereihin, joissa klusterin sisällä olevat havainnot ovat keskenään mahdollisimman samankaltaisia. Pyritään myös siihen, että klusterit ovat keskenään erilaisia. Klusterointi on yksi datan luokitteluun pyrkivä menetelmä ja siitä on useita erilasia versioita.
+
+Pääkomponenttianalyysi pyrkii muodostamaan datasta uudet muuttujat eli pääkomponentit, jotka ovat alkuperäisten muuttujien lineaarisia kombinaatioita sekä korreloimattomia keskenään. Tarkoituksena on pääkomponenttien avulla selittää mahdollisimman paljon alkuperäisten muuttujien varianssista.
+
+### K-means ryhmittely {#k-means-ryhmittely}
+
+K-means klusterointi perustuu datan jakamiseen ennalta päätettyyn lukumäärään klustereita. Klusterin määrällä $k$ jaetaan data ryhmiin $(G_1, G_2, …, G_k)$, missä $G_i$ sisältää havainnot $n_i$, jossa $i=1,..,k$ on klusterin järjestysluku.
+
+Klusterien optimaalinen lukumäärä $k$ saadaan minimoimalla jonkin numeerisen kriteerin suhteen, jossa pienet arvot viittavat parempaan ratkaisuun. Yleisimmin käytetty tapa on minimoida klusterin sisäinen neliösumma (within-group sum of squares, WGSS) kaikkien muuttujien yli.
+
+Datan jakamiseen k-means menetelmällä löytyy omia algoritmeja, jotka yleensä alkavat jostakin alkuarvoisesta jaosta klustereihin, minkä jälkeen siirrytään iteratiivisesti askel kerrallaan kohti optimaalisempaa ratkaisua. Tällaiset algortimit eivät takaa globaalin optimaalisen ratkaisun löytämistä, vaan voivat myös päätyä lokaaliin ratkaisuun. Tässä harjoitustyössä käytetään R:n omia työkaluja, joten ei syvennytä algoritmien teoriaan tarkemmin.
+
+### Pääkomponenttianalyysi (PCA) {#pääkomponenttianalyysi}
+
+Pääkomponenttianalyysin tavoitteena on selittää korreloivien muuttujien$x^T = (x_1,…,x_q)$ varianssit uusien korreloimattomien muuttujien $y^T = (y_1,..,y_q)$ avulla, jotka ovat lineaarikombinaatioita alkueräisistä muuttujista.
+
+Uudet muuttujat johdetaan laskevassa tärkeyden järjestyksessä siten, että $y_1$ selittää mahdollisimman paljon alkuperäisen datan varianssista kaikken mahdollisten lineaarikombinaatioiden joukosta. Sitten muodostetaan $y_2$ niin, että se selittää mahdollisimman paljon jäljellä olevasta varianssista ja on samalla korreloimaton $y_1:n$ kanssa ja niin edelleen saadaan seuraavat pääkomponentti muuttujat. Se, miten komponentit löydetään, ei käsitellä tässä harjoitustyössä.
+
+## Tulokset ja niiden tulkinta {#tulokset-ja-niiden-tulkinta}
+
+Tässä kappaleessa tutkitaan aineistoa valituilla menetelmillä ja tulkitaan tulokset ja menetelmien onnistuminen.
+
+### K-means ryhmittely
+
+Tutkitaan aineistoa kmeans-menetelmällä. Klustereiden sopivaa määrää voidaan tutkia toistamalla kmeans menetelmä usealla eri klusterien määrällä. Klusteria kuvaava tunnusluku within_ss tarkoittaa klusterin sisäisiä neliösummia, jotka voidaan laskea yhteen. Kun klusteriin kuuluvat havainnot ovat lähellä toisiaan ja samanlaisia keskenään, klusterin sisällä oleva hajonta on pientä. Näin voidaan yhdellä tapaa päätellä sopiva määrä klustereita dataan.
+
+```{r}
+ss <- rep(0,6); k <- 1:6
+for (j in 1:6){ss[j] <- sum(kmeans(wine[,2:14],j)$withinss)}
+plot(ss~k, ylab="Within SS", type="l")
+```
+
+Yllä olevasta kuvasta huomataan, että saavutetaan jo suuri etu kahdella klusterilla verrattuna yhteen klusteriin. Kasvattamalla klusterien määrää vielä suuremmaksi ei tapahdu suurta muutosta, joten valitaan tehdä klusterianalyysi kahdella klusterilla.
+
+```{r}
+# Kmeans menetelmä
+set.seed(10)
+km<-kmeans(wine[,2:14],2)
+
+# Piirretään kuva klustereista
+library(cluster)
+clusplot(wine[,2:14], km$cluster, color=TRUE, shade=TRUE,
+labels=2, lines=0)
+
+# Katsotaan, miten alkuperäiset viinit jakaantuvat klusterien kesken
+table(km$cluster, winetypes)
+```
+
+Table-komennolla saadun jaottelun mukaan viiniä 1 on eniten klusterissa 2 ja viinejä 2 ja 3 on eniten klusterissa 1. Jonkin verran havaintoja on jokaisesta viinistä mennyt myös toiseen klusteriin, joten jako ei ole yksiselitteinen. Voidaan kuitenkin päätellä, että viinit 2 ja 3 muistuttavat ominaisuuksiltaan enemmän toisiaan, kun taas viini 1 eroaa suuremmalta osin näistä kahdesta viinistä.
+
+Clusplot-komennolla saadussa kuvaajassa klusterit menevät jonkin verran päällekkäin, kun data piirretään kaksiulotteisesti. Komponentit selittävät nyt noin 55% varianssista, mikä on yli puolet varianssista, ja loput datan varianssista jää selittämättä.
+
+Kmeans tuloksista voidaan muodostaa uusi pisteparvi kuvaaja, kuten aineiston graafisessa esityksessä, mutta esitetään ne klusterien mukaan.
+
+```{r}
+library(mclust)
+# Plotataan data
+clPairs(wine[,2:14], km$cluster, cex.labels = 0.55, lower.panel = NULL)
+```
+
+Nähdään, että joissain kuvissa klusterit menevät päällekkäin. Suurin ero klusterien välillä nähdään proline-muuttujan (suom. proliini) sarakkeessa.
+
+Tutkitaan vielä menetelmän tunnuslukuja tarkemmin.
+
+```{r}
+print(km)
+```
+
+Tulostuksesta nähdään muun muassa klustereiden koot ja keskiarvot muuttujille klustereissa. Keskiarvojen ero on suurin proline-muuttujalle, muissa muuttujissa erot ovat suhteellisesti pienempiä, mutta kuitenkin selkeitä.
+
+Voidaan tarkastella myös tunnuslukujen suhdetta between_SS/total_SS. Total_SS kuvaa neliösummaa koko datasta ja between_SS klustereiden välistä neliösummaa. Mitä suurempi osa koko datan hajonnasta voidaan selittää klusterien välisellä hajonnalla, sitä paremmin klusterit selittävät dataa.
+
+Nyt arvo on noin 74%, mikä on reilusti yli puolet. Voidaan siis ajatella, että kaksi klusteria selittävät dataa kohtuullisen hyvin. Riippuu kuitenkin tilanteesta, halutaanko saavuttaa tätäkin parempi tulos ja missä hyvän tuloksen raja menee.
+
+### Pääkomponenttianalyysi
+
+Tutkitaan seuraavaksi dataa pääkomponenttianalyysilla. Datassa on varsinaisia muuttujia 13, joten selvitetään voidaanko niistä saada järkeviä pääkomponentteja ja vähentää näin muuttujien määrää. Käytetään sekä kovarianssimatriisia ja korrelaatiomatriisia pääkomponenttianalyysissa ja esitetään niiden tulokset.
+
+```{r}
+
+# Muodostetaan datasta sen kovarianssi ja korrelaatiomatriisi
+S = cov(wine[,2:14])
+R = cor(wine[,2:14])
+
+# Suoritetaan pääkomponenttianalyysi
+wine_pca <- princomp(covmat = S) #Kovarianssimatriisilla
+wine_pca2 <- princomp(covmat = R) # Korrelaatiomatriisilla
+
+# Tarkastellaan tiivistelmää
+summary(wine_pca, loadings = TRUE)
+summary(wine_pca2, loadings = TRUE)
+
+# Pääkomponenttien osuus
+layout(matrix(1:4, nc = 2))
+plot(wine_pca)
+plot(wine_pca, type="line")
+plot(wine_pca2)
+plot(wine_pca2, type="line")
+
+```
+
+Pääkomponenttianalyyisssa voidaan tilaanteesta riippuen käyttää kovarianssimatriisia tai korrelaatiomatriisia. Pääkomponenttianalyysi ei ole skaalainvariantti, mikä on yksi sen haasteista. Lisäksi, jos alkuperäisten muuttujien varianssien välillä on suuria eroja ja yhden muuttujan varianssi on muita suurempi, voi muuttujalla olla alkuvaiheessa suuri vaikutus pääkomponentteihin. Kovarianssimatriisia on sopivin käyttää, kun muuttujat ovat suurin piirtein samaa skaalaa, ja muussa tapauksessa on hyvä käyttää korrelaatiomatriisia.
+
+Kovarianssimatriisilla saadussa pääkomponenttianalyysin tuloksessa ensimmäinen komponentti selittää suuren osan varianssista osuudella 0.9980912 ja seuraavilla komponenteilla ei ole merkittävää vaikutusta.
+
+Korrelaatiollamatriisilla saadussa tuloksessa neljän ensimmäisen komponentin kumulatiivinen osuus on 0.7359900. Usein valitaan komponenttien määrä siten, että ne selittävät noin 70-90% varianssista, joten tässä tapauksessa neljästä seitsemään pääkomponenttia.
+
+Saatiin siis erilainen tulos verrattuna kovarianssimatriisilla saatuun tulokseen, jossa vastaukseksi saatiin yksi komponentti. Tulokset kovarianssi -ja korrelaatiomatriisilla eivät yleisesti ole toisiaan vastaavia ja siksi niillä tulee erilaisia tuloksia. Tässä tilanteessa korrelaatiomatriisilla saatu tulos antaa enemmän informaatiota ja yksittäinen muuttuja (esim. proline) ei pääse vaikuttamaan tulokseen liikaa.
+
+## Yhteenveto {#yhteenveto}
+
+Harjoitustyön tutkittavana aineistona oli kolmesta eri viinistä kerätyt havainnot niiden kemiallisista ominaisuuksista. Aluksi ryhmiteltiin aineistoa k-means menetelmällä ja saatiin vastaukseksi kaksi klusteria, jossa ensimmäisessä oli eniten viiniä 2 ja 3 ja toisessa klusterissa viiniä 1. Osa havainnoista meni kaikista viineistä myös toiseen klusteriin, joten jako ei ollut aivan tasainen. Tämä voi johtua monesta seikasta, aineistossa voi olla esimerkiksi sattumaa tai mittausvirhettä, jolloin jotkin havainnoista menivät väärään klusteriin. K-means menetelmä kuitenkin kohtalaisen hyvin onnistui datan ryhmittelyssä, kun tarkasteltiin tuloksia.
+
+Pääkomponenttianalyysissa tavoitteena oli löytää pääkomponentit, joilla datan alkuperäiset 13 muuttujaa saataisiin esitettyä pienemmällä määrällä komponentteja. Pääkomponettianalyysi toteutettiin sekä kovarianssimatriisin ja korrelaatiomatriisin avulla, ja johtopäätöksenä todettiin, että aineiston perusteella korrelaatiomatriisilla saadaan pääkomponenttianalyysilla parempi tulos. Riippuen tilanteesta, data pystytään esittämään neljästä komponentista ylöspäin, joten onnistuttiin dimensioiden vähentämisessä.
+
+Harjoitustyön menetelmät sopivat aineistoon kohtalaisen hyvin, mutta varsinkin k-means ryhmittelyssä tulos ei onnistunut täysin ja tuli virheellisiä luokitteluja. Virheet voivat johtua joko itse datasta tai ryhmittelyyn voidaan yrittää soveltaa jotain toista klusterointimenetelmää. K-means klusterointi on myös herkkä sellaisille havainnoille, jotka ovat irrallaan tai kaukana muusta datasta. Harjoitustyö keskittyy näihin kahteen menetelmään, joten muita mahdollisia menetelmiä datalle ei tutkittu.
+
+# Lähteet
+
+<https://archive.ics.uci.edu/ml/datasets/wine>
+
+Everitt, Brian., and Torsten. Hothorn. An Introduction to Applied Multivariate Analysis with R. 1st ed. 2011. New York, NY: Springer New York, 2011. Web.
+
+Monimuuttujamenetelmät-luentomateriaali
+
+R dokumentaatio
